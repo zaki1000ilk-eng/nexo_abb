@@ -1,74 +1,142 @@
-<!doctype html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NEXO</title>
-<style>
-body{margin:0;background:#080b0a;color:#f4fff8;font-family:system-ui;display:grid;place-items:center;min-height:100vh;padding:18px}
-main{width:min(100%,430px);background:#111815;border:1px solid #294033;border-radius:20px;padding:22px}
-h1,.logo{color:#39ff88}.logo{text-align:center;font-size:34px;font-weight:800}
-label{display:block;margin:12px 0 5px}input{width:100%;box-sizing:border-box;padding:13px;border-radius:10px;border:1px solid #405447;background:#080e0a;color:white;font-size:16px}
-button{width:100%;padding:13px;margin-top:12px;border:0;border-radius:10px;background:#39ff88;font-weight:700;font-size:16px}
-.alt{background:#26372d;color:white}small,.note{color:#aab7af;line-height:1.6}.msg{margin-top:12px;color:#ffd47a;overflow-wrap:anywhere}
-#chat{display:none}#messages{height:220px;overflow:auto;border:1px solid #405447;border-radius:10px;padding:8px;margin-top:12px}
-.bubble{background:#1d3025;padding:9px;border-radius:10px;margin:7px 0;overflow-wrap:anywhere}
-</style></head>
-<body><main>
-<div class="logo">NEXO</div><p class="note" style="text-align:center">تواصل بلا حدود</p>
-<section id="auth">
-<h1>إنشاء حساب / دخول</h1>
-<label>اسم المستخدم</label><input id="username" placeholder="اسم المستخدم">
-<label>البريد الإلكتروني</label><input id="email" type="email" placeholder="name@example.com">
-<label>كلمة المرور</label><input id="password" type="password" placeholder="كلمة المرور">
-<button id="signup">إنشاء حساب</button><button class="alt" id="login">تسجيل الدخول</button>
-<div class="msg" id="authMsg"></div>
-<p class="note">نسخة تجريبية أولية. لا تشارك كلمة المرور أو المعلومات الخاصة.</p>
-</section>
-<section id="chat">
-<h1>محادثة نصية تجريبية</h1>
-<p class="note">أدخل معرّف المستخدم (UID) للشخص الآخر. لا يوجد بحث عن المستخدمين في هذه النسخة.</p>
-<label>UID المستلم</label><input id="recipient" placeholder="معرّف المستخدم">
-<button id="open">فتح المحادثة</button>
-<div id="messages"></div>
-<label>رسالتك</label><input id="message" maxlength="2000" placeholder="اكتب رسالة">
-<button id="send">إرسال</button><button class="alt" id="logout">تسجيل الخروج</button>
-<div class="msg" id="chatMsg"></div>
-</section></main>
-<script type="module">
-import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {getAuth,createUserWithEmailAndPassword,signInWithEmailAndPassword,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {getFirestore,doc,setDoc,collection,addDoc,query,orderBy,onSnapshot,serverTimestamp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-const firebaseConfig={
-apiKey:"AIzaSyAn513X1vYuBxyUgYpFEY_a26-WS0oEg5A",
-authDomain:"nexo-63793.firebaseapp.com",
-projectId:"nexo-63793",
-storageBucket:"nexo-63793.firebasestorage.app",
-messagingSenderId:"232696124952",
-appId:"1:232696124952:web:070a95c418dea834f6556d",
-measurementId:"G-G83ZZSW6CE"};
-const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app);
-const $=id=>document.getElementById(id);let chatId=null,stop=null;
-$("signup").onclick=async()=>{try{
-let username=$("username").value.trim(),email=$("email").value.trim(),password=$("password").value;
-if(username.length<3||username.length>24)throw Error("اسم المستخدم يجب أن يكون بين 3 و24 حرفًا.");
-let c=await createUserWithEmailAndPassword(auth,email,password);
-await setDoc(doc(db,"users",c.user.uid),{uid:c.user.uid,username,usernameLower:username.toLowerCase(),createdAt:serverTimestamp()});
-$("authMsg").textContent="تم إنشاء الحساب.";
-}catch(e){$("authMsg").textContent=e.message;}};
-$("login").onclick=async()=>{try{await signInWithEmailAndPassword(auth,$("email").value.trim(),$("password").value);}catch(e){$("authMsg").textContent=e.message;}};
-onAuthStateChanged(auth,u=>{$("auth").style.display=u?"none":"block";$("chat").style.display=u?"block":"none";if(!u&&stop){stop();stop=null;}});
-$("logout").onclick=()=>signOut(auth);
-$("open").onclick=async()=>{try{
-let other=$("recipient").value.trim();if(!other)throw Error("أدخل UID المستلم.");
-if(other===auth.currentUser.uid)throw Error("لا يمكنك فتح محادثة مع نفسك.");
-let members=[auth.currentUser.uid,other].sort();chatId=members.join("_");
-await setDoc(doc(db,"chats",chatId),{members,createdAt:serverTimestamp()});
-if(stop)stop();
-let q=query(collection(db,"chats",chatId,"messages"),orderBy("createdAt"));
-stop=onSnapshot(q,s=>{$("messages").replaceChildren();s.forEach(d=>{let div=document.createElement("div");div.className="bubble";div.textContent=(d.data().senderId===auth.currentUser.uid?"أنت: ":"المستلم: ")+d.data().text;$("messages").append(div);});},e=>$("chatMsg").textContent=e.message);
-$("chatMsg").textContent="تم فتح المحادثة.";
-}catch(e){$("chatMsg").textContent=e.message;}};
-$("send").onclick=async()=>{try{let text=$("message").value.trim();if(!chatId)throw Error("افتح محادثة أولًا.");if(!text)return;
-await addDoc(collection(db,"chats",chatId,"messages"),{text,senderId:auth.currentUser.uid,createdAt:serverTimestamp()});$("message").value="";
-}catch(e){$("chatMsg").textContent=e.message;}};
-</script></body></html>
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function owner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function validUsername(name) {
+      return name is string
+        && name.matches('^[a-z0-9_]{3,20}$');
+    }
+
+    function chatExists(chatId) {
+      return exists(
+        /databases/$(database)/documents/chats/$(chatId)
+      );
+    }
+
+    function isChatMember(chatId) {
+      return signedIn()
+        && chatExists(chatId)
+        && request.auth.uid in get(
+          /databases/$(database)/documents/chats/$(chatId)
+        ).data.participants;
+    }
+
+    // ملفات المستخدمين: صاحب الحساب فقط يقرأ ملفه.
+    match /users/{userId} {
+      allow get: if owner(userId);
+      allow list: if false;
+
+      allow create: if owner(userId)
+        && request.resource.data.keys().hasAll([
+          'uid', 'username', 'email', 'createdAt'
+        ])
+        && request.resource.data.uid == userId
+        && validUsername(request.resource.data.username)
+        && request.resource.data.createdAt == request.time
+        && getAfter(
+          /databases/$(database)/documents/usernames/$(request.resource.data.username)
+        ).data.uid == userId;
+
+      allow update, delete: if false;
+
+      // قائمة الأصدقاء الخاصة بصاحب الحساب.
+      match /friends/{friendId} {
+        allow read: if owner(userId);
+
+        allow create: if owner(userId)
+          && friendId != userId
+          && request.resource.data.keys().hasOnly([
+            'friendUid', 'username', 'addedAt'
+          ])
+          && request.resource.data.friendUid == friendId
+          && validUsername(request.resource.data.username)
+          && request.resource.data.addedAt == request.time
+          && get(
+            /databases/$(database)/documents/usernames/$(request.resource.data.username)
+          ).data.uid == friendId;
+
+        allow update, delete: if false;
+      }
+    }
+
+    // حجز اسم المستخدم: إنشاء فقط، دون تعديل أو حذف.
+    match /usernames/{username} {
+      allow get: if signedIn();
+      allow list: if false;
+
+      allow create: if signedIn()
+        && validUsername(username)
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid
+        && getAfter(
+          /databases/$(database)/documents/users/$(request.auth.uid)
+        ).data.username == username;
+
+      allow update, delete: if false;
+    }
+
+    // المحادثات.
+    match /chats/{chatId} {
+      allow get, list: if signedIn()
+        && request.auth.uid in resource.data.participants;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'participants', 'createdAt'
+        ])
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size() == 2
+        && request.auth.uid in request.resource.data.participants
+        && request.resource.data.participants[0]
+          != request.resource.data.participants[1]
+        && request.resource.data.createdAt == request.time;
+
+      allow update, delete: if false;
+
+      // الرسائل.
+      match /messages/{messageId} {
+        allow read: if isChatMember(chatId);
+
+        allow create: if isChatMember(chatId)
+          && request.resource.data.keys().hasOnly([
+            'senderId', 'text', 'timestamp'
+          ])
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() >= 1
+          && request.resource.data.text.size() <= 1000
+          && request.resource.data.timestamp == request.time;
+
+        allow update, delete: if false;
+      }
+    }
+
+    // الحالات: متاحة للمستخدمين المسجلين.
+    match /stories/{storyId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'userId', 'username', 'text', 'timestamp'
+        ])
+        && request.resource.data.userId == request.auth.uid
+        && validUsername(request.resource.data.username)
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 1
+        && request.resource.data.text.size() <= 300
+        && request.resource.data.timestamp == request.time;
+
+      allow update, delete: if signedIn()
+        && resource.data.userId == request.auth.uid;
+    }
+  }
+}
